@@ -110,6 +110,61 @@ io.on("connection", (socket) => {
     sendQuestion(roomId);
   });
 
+  /* HANDLE MANUAL QUESTIONS FROM HOST */
+  socket.on('sendManualQuestion', (data) => {
+    const { roomId, question, options, correctIndex } = data;
+    
+    console.log(`Manual question from host in room ${roomId}:`, {
+      question,
+      options,
+      correctIndex
+    });
+    
+    if (!roomId || !rooms[roomId]) {
+      socket.emit('errorMessage', 'Room not found');
+      return;
+    }
+    
+    const room = rooms[roomId];
+    
+    // Verify that the sender is the host
+    if (room.hostId !== socket.id) {
+      socket.emit('errorMessage', 'Only the host can send questions');
+      return;
+    }
+    
+    // Validate question data
+    if (!question || !options || options.length !== 4 || correctIndex < 0 || correctIndex > 3) {
+      socket.emit('errorMessage', 'Invalid question format');
+      return;
+    }
+    
+    // Create question object (don't send correctIndex to participants)
+    const questionData = {
+      question: question.trim(),
+      options: options.map(opt => opt.trim()),
+      index: room.currentQuestionIndex || 0
+    };
+    
+    // Store the correct answer on server side
+    room.currentCorrectAnswer = correctIndex;
+    room.currentQuestion = questionData;
+    room.isActive = true;
+    
+    // Reset player answers for new question
+    Object.keys(room.players).forEach(playerId => {
+      if (room.players[playerId]) {
+        room.players[playerId].hasAnswered = false;
+        room.players[playerId].currentAnswer = null;
+      }
+    });
+    
+    // Send question to all players in the room
+    io.to(roomId).emit('newQuestion', questionData);
+    
+    console.log(`Manual question sent to room ${roomId}: "${question}"`);
+  });
+
   /* DISCONNECT */
   socket.on("disconnect", () => {
     console.log("❌ User disconnected:", socket.id);
